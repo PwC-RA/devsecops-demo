@@ -1,4 +1,4 @@
-name: Security CI
+name: DevSecOps
 
 on:
   workflow_dispatch:
@@ -58,9 +58,11 @@ jobs:
         --header 'Content-Type: multipart/form-data' \
         --form 'branch="main"' \
         --form 'repoId="11"'
+        echo "For more details, please redirect to: http://ec2-52-80-243-115.cn-north-1.compute.amazonaws.com.cn:30080/openSourceSca/detail?repoId=11"
 
   build-and-scan:
     name: Build & Scan Image
+    needs: ["sca", "iac-scan", "sast"]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code

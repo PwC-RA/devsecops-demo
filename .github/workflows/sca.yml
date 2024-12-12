@@ -1,0 +1,44 @@
+name: SCA
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+    tags:
+      - "*"
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  sca:
+    name: SCA
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    # The first call to the action will invoke setup-trivy and install trivy
+    - name: Generate Trivy Vulnerability Report
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: "fs"
+        timeout: '30m'
+        exit-code: 0
+        format: 'template'
+        template: "@$HOME/.local/bin/trivy-bin/contrib/html.tpl"
+        output: trivy-report.html
+
+    - name: Upload Vulnerability Scan Results
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-report
+        path: trivy-report.html
+        retention-days: 30
+
+    - name: Run Trivy vulnerability scanner in repo mode
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        ignore-unfixed: true
+        timeout: '30m'
+        severity: 'CRITICAL,HIGH'
+        exit-code: 1
+        skip-setup-trivy: true

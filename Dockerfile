@@ -1,4 +1,4 @@
-FROM alpine
+FROM openjdk:8-jre
 
 MAINTAINER mockuser
 
