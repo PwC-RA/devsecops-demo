@@ -1,0 +1,177 @@
+name: Security CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+        type: choice
+        options:
+        - info
+        - warning
+        - debug
+      usePR:
+        description: 'if use pr to scan'
+        required: true
+        default: false
+        type: boolean
+      prAuth:
+        description: 'PR Auth Token. if usePR is true, it is required.'
+        required: false
+        type: string
+
+jobs:
+  sast:
+    name: SAST with SonarQube
+    runs-on: ubuntu-latest
+    steps:
+      - name: sast
+        shell: bash
+        run: echo "start sast scan..."
+
+  iac-scan:
+    name: IaC Scan
+    runs-on: ubuntu-latest
+    steps:
+    - name: Run Trivy vulnerability scanner in IaC mode
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'config'
+        hide-progress: true
+        format: 'table'
+        exit-code: '1'
+        severity: 'CRITICAL,HIGH'
+  
+  sca:
+    name: SCA
+    runs-on: ubuntu-latest
+    steps:
+    - name: Use PR to run sca
+      if:  ${{ inputs.usePR }}
+      shell: bash
+      run: echo "${{ inputs.prAuth }}"
+
+    - name: Checkout code
+      if:  ${{ ! inputs.usePR }}
+      uses: actions/checkout@v4
+    # The first call to the action will invoke setup-trivy and install trivy
+    - name: Generate Trivy Vulnerability Report
+      if:  ${{ ! inputs.usePR }}
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: "fs"
+        timeout: '30m'
+        exit-code: 0
+        format: 'template'
+        template: "@$HOME/.local/bin/trivy-bin/contrib/html.tpl"
+        output: trivy-report.html
+
+    - name: Upload Vulnerability Scan Results
+      if:  ${{ ! inputs.usePR }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: trivy-report
+        path: trivy-report.html
+        retention-days: 30
+
+    - name: Run Trivy vulnerability scanner in repo mode
+      if:  ${{ ! inputs.usePR }}
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        ignore-unfixed: true
+        timeout: '30m'
+        severity: 'CRITICAL,HIGH'
+        exit-code: 1
+        skip-setup-trivy: true
+
+  build-mock:
+    runs-on: ubuntu-latest
+    if: true
+    needs: sca
+    steps:
+    - name: build
+      shell: bash
+      run: echo "mock build"
+
+  build:
+    runs-on: ubuntu-latest
+    if: false
+    needs: sca
+    steps:
+    - uses: actions/checkout@v4
+
+#   Start build image with cache
+#   Reference: https://docs.docker.com/build/ci/github-actions/cache/#local-cache
+    - name: Cache Primes
+      id: maven-cache
+      uses: actions/cache@v4
+      with:
+        path: m2-cache
+        key: ${{ runner.os }}-pr-onbuild-image-cache
+
+    - name: Build onbuild image
+      run: make build-onbuild-image
+
+    - name: Build runtime images
+      run: make build-runtime-images
+#   End build image
+
+#   Start release images
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: registry.cn-hangzhou.aliyuncs.com
+        username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+        password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+
+    - name: Release runtime images
+      run: make release
+
+    - name: Archive dist
+      uses: actions/upload-artifact@v4
+      with:
+        name: dist
+        path: dist/*.tar.gz
+#   End release images
+
+
+  image-scan:
+    name: image-scan-with-trivy
+    runs-on: ubuntu-latest
+    needs: build-mock
+    steps:
+    - name: Run Trivy vulnerability scanner for image
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'registry.cn-hangzhou.aliyuncs.com/pwc-ra/pr-pia:dev-ad49381'
+        format: 'table'
+        exit-code: '0'
+        ignore-unfixed: true
+        vuln-type: 'os,library'
+        severity: 'CRITICAL,HIGH'
+      env:
+        TRIVY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+        TRIVY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+  
+  deploy-test:
+    name: Deploy to TEST env
+    runs-on: ubuntu-latest
+    needs: image-scan
+    steps:
+    - name: deploy
+      shell: bash
+      run: echo "deploy"
+  
+  dast:
+    name: DAST with ZAP
+    runs-on: ubuntu-latest
+    needs: deploy-test
+    steps:
+    - name: ZAP Scan
+      uses: zaproxy/action-baseline@v0.14.0
+      with:
+        target: 'http://ec2-52-80-243-115.cn-north-1.compute.amazonaws.com.cn:30080'
+
