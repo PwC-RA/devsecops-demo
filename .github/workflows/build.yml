@@ -1,0 +1,28 @@
+name: Build
+
+on:
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  build-and-scan:
+    name: Build & Scan Image
+    needs: ["sca", "iac-scan", "sast"]
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Build an image from Dockerfile
+      run: |
+        docker build -t docker.io/pwc-ra/devsecops-demo:${{ github.sha }} .
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: 'docker.io/pwc-ra/devsecops-demo:${{ github.sha }}'
+        format: 'table'
+        exit-code: '0'
+        ignore-unfixed: true
+        vuln-type: 'os,library'
+        severity: 'CRITICAL,HIGH'
