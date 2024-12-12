@@ -49,112 +49,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Use PR to run sca
-      if:  ${{ inputs.usePR }}
       shell: bash
-      run: echo "${{ inputs.prAuth }}"
+      run: |
+        echo ""
+        curl --location --request POST 'http://ec2-52-80-243-115.cn-north-1.compute.amazonaws.com.cn:30080/prod-api/osp/repo_history/add' \
+        --header 'Authorization: ${{ inputs.prAuth }}' \
+        --header 'Accept: */*' \
+        --header 'Content-Type: multipart/form-data' \
+        --form 'branch="main"' \
+        --form 'repoId="11"'
 
+  build-and-scan:
+    name: Build & Scan Image
+    runs-on: ubuntu-latest
+    steps:
     - name: Checkout code
-      if:  ${{ ! inputs.usePR }}
       uses: actions/checkout@v4
-    # The first call to the action will invoke setup-trivy and install trivy
-    - name: Generate Trivy Vulnerability Report
-      if:  ${{ ! inputs.usePR }}
+
+    - name: Build an image from Dockerfile
+      run: |
+        docker build -t docker.io/pwc-ra/devsecops-demo:${{ github.sha }} .
+
+    - name: Run Trivy vulnerability scanner
       uses: aquasecurity/trivy-action@master
       with:
-        scan-type: "fs"
-        timeout: '30m'
-        exit-code: 0
-        format: 'template'
-        template: "@$HOME/.local/bin/trivy-bin/contrib/html.tpl"
-        output: trivy-report.html
-
-    - name: Upload Vulnerability Scan Results
-      if:  ${{ ! inputs.usePR }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: trivy-report
-        path: trivy-report.html
-        retention-days: 30
-
-    - name: Run Trivy vulnerability scanner in repo mode
-      if:  ${{ ! inputs.usePR }}
-      uses: aquasecurity/trivy-action@master
-      with:
-        scan-type: 'fs'
-        ignore-unfixed: true
-        timeout: '30m'
-        severity: 'CRITICAL,HIGH'
-        exit-code: 1
-        skip-setup-trivy: true
-
-  build-mock:
-    runs-on: ubuntu-latest
-    if: true
-    needs: sca
-    steps:
-    - name: build
-      shell: bash
-      run: echo "mock build"
-
-  build:
-    runs-on: ubuntu-latest
-    if: false
-    needs: sca
-    steps:
-    - uses: actions/checkout@v4
-
-#   Start build image with cache
-#   Reference: https://docs.docker.com/build/ci/github-actions/cache/#local-cache
-    - name: Cache Primes
-      id: maven-cache
-      uses: actions/cache@v4
-      with:
-        path: m2-cache
-        key: ${{ runner.os }}-pr-onbuild-image-cache
-
-    - name: Build onbuild image
-      run: make build-onbuild-image
-
-    - name: Build runtime images
-      run: make build-runtime-images
-#   End build image
-
-#   Start release images
-    - name: Login to GitHub Container Registry
-      uses: docker/login-action@v3
-      with:
-        registry: registry.cn-hangzhou.aliyuncs.com
-        username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-        password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-
-    - name: Release runtime images
-      run: make release
-
-    - name: Archive dist
-      uses: actions/upload-artifact@v4
-      with:
-        name: dist
-        path: dist/*.tar.gz
-#   End release images
-
-
-  image-scan:
-    name: image-scan-with-trivy
-    runs-on: ubuntu-latest
-    needs: build-mock
-    steps:
-    - name: Run Trivy vulnerability scanner for image
-      uses: aquasecurity/trivy-action@master
-      with:
-        image-ref: 'registry.cn-hangzhou.aliyuncs.com/pwc-ra/pr-pia:dev-ad49381'
+        image-ref: 'docker.io/pwc-ra/devsecops-demo:${{ github.sha }}'
         format: 'table'
         exit-code: '0'
         ignore-unfixed: true
         vuln-type: 'os,library'
         severity: 'CRITICAL,HIGH'
-      env:
-        TRIVY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
-        TRIVY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
   
   deploy-test:
     name: Deploy to TEST env
