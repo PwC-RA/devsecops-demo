@@ -7,7 +7,6 @@ on:
 jobs:
   build-and-scan:
     name: Build & Scan Image
-    needs: ["sca", "iac-scan", "sast"]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
