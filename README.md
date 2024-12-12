@@ -2,3 +2,4 @@
 DevSecOps Demo
 
 password: dangerous
+secret: dangerous
