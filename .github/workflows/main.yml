@@ -83,7 +83,7 @@ jobs:
   deploy-test:
     name: Deploy to TEST env
     runs-on: ubuntu-latest
-    needs: image-scan
+    needs: build-and-scan
     steps:
     - name: deploy
       shell: bash
