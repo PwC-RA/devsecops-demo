@@ -39,6 +39,7 @@ jobs:
         scan-type: 'fs'
         ignore-unfixed: true
         timeout: '30m'
+        format: 'table'
         severity: 'CRITICAL,HIGH,MEDIUM'
         exit-code: 1
         skip-setup-trivy: true
